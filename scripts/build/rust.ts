@@ -333,7 +333,9 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
     profile.name,
     "--locked",
   ];
-  if (tier3 || cfg.release || cfg.asan) {
+  // conda-forge: use the prebuilt std of conda-forge's nightly rust; only
+  // rebuild std where required.
+  if (tier3 || cfg.asan) {
     // Rebuild std from source (cargoBuildStdArg) because:
     // tier3:   no prebuilt `rust-std` exists.
     // release: prebuilt std is native code built for generic x86-64 with no
