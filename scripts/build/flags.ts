@@ -1090,7 +1090,8 @@ export const linkerFlags: Flag[] = [
     // understood) when Apple's ld driver does the link. ld64.lld (the
     // cross-link path) parses it as `-l d_new` and fails.
     flag: "-Wl,-ld_new",
-    when: c => c.darwin && c.crossTarget === undefined,
+    // conda-forge: ld64 from cctools does not understand -ld_new
+    when: () => false,
     desc: "Use new Apple linker (native darwin links only)",
   },
   {
