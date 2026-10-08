@@ -1183,7 +1183,10 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
             ? partial.linuxSysroot
             : resolve(cwd, partial.linuxSysroot)
           : detectLinuxGlibcSysroot(arch);
-      if (sysroot !== undefined || isCross) {
+      // conda-forge: with BUN_TOOLCHAIN_LLVM pointing at target-prefixed
+      // compiler wrappers (which already set target and sysroot), a
+      // cross-build needs no extra --target/--sysroot.
+      if (sysroot !== undefined || (isCross && process.env.BUN_TOOLCHAIN_LLVM === undefined)) {
         crossTarget = `${llvmArch}-linux-gnu`;
         if (sysroot === undefined) {
           const p = locations.glibcSysroot[arch];
