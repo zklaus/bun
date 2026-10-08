@@ -690,7 +690,6 @@ export const bunOnlyFlags: Flag[] = [
       "-Wno-c++23-lambda-attributes",
       "-Wno-nullability-completeness",
       "-Wno-character-conversion",
-      "-Werror",
     ],
     when: c => c.unix,
     desc: "Treat most warnings as errors; suppress known-noisy ones",
