@@ -489,6 +489,11 @@ export function resolveLlvmToolchain(
   if (msvcTarget && os !== "windows") {
     hostCc = findLlvmTool("clang", paths, os, { checkVersion: false, required: true })?.path;
     hostCxx = findLlvmTool("clang++", paths, os, { checkVersion: false, required: true })?.path;
+  } else if (process.env.CC_FOR_BUILD && process.env.CXX_FOR_BUILD) {
+    // conda-forge: cross-compilers are target-prefixed wrappers; host tools
+    // must be built with the build-platform compiler instead.
+    hostCc = process.env.CC_FOR_BUILD;
+    hostCxx = process.env.CXX_FOR_BUILD;
   }
 
   // ar: llvm-ar (or llvm-lib for windows targets)
