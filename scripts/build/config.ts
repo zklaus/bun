@@ -1451,6 +1451,9 @@ function detectMacosSdk(ci: boolean): { osxDeploymentTarget: string; osxSysroot:
 
   let osxSysroot: string | undefined;
   let sdkVersionFromPath: string | undefined;
+  // conda-forge: build against the SDK selected by the build environment.
+  const sdkRoot = process.env.CONDA_BUILD_SYSROOT ?? process.env.SDKROOT;
+  if (sdkRoot !== undefined && existsSync(sdkRoot)) candidates.unshift(sdkRoot);
   for (const path of candidates) {
     if (existsSync(path)) {
       osxSysroot = path; // symlink — matches xcrun's output
