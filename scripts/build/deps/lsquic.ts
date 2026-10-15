@@ -12,7 +12,7 @@
  */
 
 import type { Dependency, DirectBuild } from "../source.ts";
-import { depBuildDir, depSourceDir } from "../source.ts";
+import { depBuildDir, depSourceDir, isSystemDep } from "../source.ts";
 
 const LSQUIC_COMMIT = "3181911301b1aa4f54c1ed690901abc674ee08fb";
 
@@ -138,15 +138,22 @@ export const lsquic: Dependency = {
     const zlibBuild = depBuildDir(cfg, "zlib");
     const zlibSrc = depSourceDir(cfg, "zlib");
     const needCompatQueue = cfg.abi === "musl";
+    // With a system ls-hpack, lsqpack.c can't share the .bss Huffman tables
+    // from the patched lshpack.c and keeps its own. It also needs its own
+    // xxhash, namespaced so it can't clash with the one libls-hpack exports.
+    const systemLshpack = isSystemDep("lshpack");
     const spec: DirectBuild = {
       kind: "direct",
-      sources: [...liblsquic.map(s => "src/liblsquic/" + s), lsqpackSrc + "/lsqpack.c"],
+      sources: [
+        ...liblsquic.map(s => "src/liblsquic/" + s),
+        lsqpackSrc + "/lsqpack.c",
+        ...(systemLshpack ? [lsqpackSrc + "/deps/xxhash/xxhash.c"] : []),
+      ],
       includes: [
         "include",
         "src/liblsquic",
         boringssl + "/include",
-        lshpackSrc,
-        lshpackSrc + "/deps/xxhash",
+        ...(systemLshpack ? [lsqpackSrc + "/deps/xxhash"] : [lshpackSrc, lshpackSrc + "/deps/xxhash"]),
         lsqpackSrc,
         ...(cfg.windows ? ["wincompat", lsqpackSrc + "/wincompat"] : []),
         zlibBuild,
@@ -160,7 +167,7 @@ export const lsquic: Dependency = {
         // lsqpack.c defaults LS_QPACK_USE_LARGE_TABLES=1 internally; setting
         // it here is defensive (mirrors lshpack.ts).
         LS_QPACK_USE_LARGE_TABLES: 1,
-        LS_HPACK_BSS_LARGE_TABLES: 1,
+        LS_HPACK_BSS_LARGE_TABLES: systemLshpack ? 0 : 1,
         LSQPACK_ENC_LOGGER_HEADER: "lsquic_qpack_enc_logger.h",
         LSQPACK_DEC_LOGGER_HEADER: "lsquic_qpack_dec_logger.h",
         LSQUIC_DEBUG_NEXT_ADV_TICK: 0,
@@ -174,6 +181,7 @@ export const lsquic: Dependency = {
         // -w: lsquic emits a lot of -Wsign-compare and -Wunused under -Wall;
         // upstream builds with -Werror disabled. Treat as a third-party lib.
         "-w",
+        ...(systemLshpack ? ["-DXXH_NAMESPACE=LSQPACK_"] : []),
         // lsquic_logger.h defaults LSQUIC_LOWEST_LOG_LEVEL to LSQ_LOG_DEBUG, so
         // every LSQ_DEBUG body and format string compiles in: `LSQ_LOG_ENABLED`
         // then gates on a runtime array lookup the optimizer cannot fold, and
