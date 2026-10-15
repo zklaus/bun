@@ -1611,6 +1611,9 @@ function readRustToolchainChannel(cwd: string): string | undefined {
 }
 
 function getGitRevision(cwd: string, pinDir: string | undefined): string {
+  // conda-forge builds from a release tarball without git history. Use a
+  // fixed placeholder; it must be at least 9 characters (GIT_SHA_SHORT).
+  return "not-set-in-conda-build";
   // CI env first — authoritative and zero-cost.
   const envSha = process.env.BUILDKITE_COMMIT ?? process.env.GITHUB_SHA ?? process.env.GIT_SHA;
   if (envSha !== undefined && envSha.length > 0) {
