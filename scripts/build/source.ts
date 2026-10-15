@@ -792,6 +792,86 @@ export function depSource(cfg: Config, dep: Dependency): Source {
 }
 
 /**
+ * Shared libraries each dep can be replaced with when it is taken from the
+ * system instead of being fetched and built. Only deps without functional
+ * patches are listed here. lshpack is not: bun, lsquic and lsqpack build
+ * against lsxpack_header.h with LSXPACK_MAX_STRLEN=UINT32_MAX (lshpack.ts
+ * lsxpackDefines), which changes the layout of struct lsxpack_header, so a
+ * libls-hpack built with the default UINT16_MAX is not ABI-compatible.
+ */
+const SYSTEM_DEP_LIBS: Record<string, string[]> = {
+  brotli: ["brotlienc", "brotlidec", "brotlicommon"],
+  hdrhistogram: ["hdr_histogram"],
+  highway: ["hwy"],
+  libdeflate: ["deflate"],
+  "libjpeg-turbo": ["turbojpeg"],
+  libwebp: ["webpdemux", "webpmux", "webp", "sharpyuv"],
+  sqlite: ["sqlite3"],
+  zlib: ["z"],
+  zstd: ["zstd"],
+};
+
+/** Windows import library names that differ from the ones above. */
+const SYSTEM_DEP_LIBS_WINDOWS: Record<string, string[]> = {
+  libwebp: ["libwebpdemux", "libwebpmux", "libwebp", "libsharpyuv"],
+  zlib: ["zlib"],
+};
+
+/**
+ * Defines needed to consume the shared library instead of the static one on
+ * Windows, where data and C++ symbols have to be declared dllimport.
+ */
+const SYSTEM_DEP_DEFINES_WINDOWS: Record<string, string[]> = {
+  highway: ["HWY_SHARED_DEFINE"],
+};
+
+/**
+ * Prefix holding the system deps' headers and libraries, from
+ * `$BUN_SYSTEM_DEPS_PREFIX`. Undefined when no system deps are used.
+ */
+export function systemDepsPrefix(): string | undefined {
+  return process.env.BUN_SYSTEM_DEPS_PREFIX || undefined;
+}
+
+/**
+ * Whether `name` is linked from `systemDepsPrefix()` instead of being built
+ * from its vendored source. Set via `$BUN_SYSTEM_DEPS=name[,name...]`.
+ */
+export function isSystemDep(name: string): boolean {
+  const names = (process.env.BUN_SYSTEM_DEPS ?? "").split(",").map(s => s.trim());
+  return names.includes(name);
+}
+
+function resolveSystemDep(cfg: Config, dep: Dependency): ResolvedDep {
+  const prefix = systemDepsPrefix();
+  const libNames = SYSTEM_DEP_LIBS[dep.name];
+  assert(prefix !== undefined, `$BUN_SYSTEM_DEPS lists ${dep.name} but $BUN_SYSTEM_DEPS_PREFIX is not set`);
+  assert(libNames !== undefined, `${dep.name} cannot be used from the system`, {
+    hint: `Supported: ${Object.keys(SYSTEM_DEP_LIBS).join(", ")}`,
+  });
+  const defines = [...(dep.provides(cfg).defines ?? [])];
+  let libs: string[];
+  if (cfg.windows) {
+    // import libraries: <prefix>/lib/<name>.lib
+    libs = (SYSTEM_DEP_LIBS_WINDOWS[dep.name] ?? libNames).map(l => resolve(prefix, "lib", `${l}.lib`));
+    defines.push(...(SYSTEM_DEP_DEFINES_WINDOWS[dep.name] ?? []));
+  } else {
+    const ext = cfg.darwin ? ".dylib" : ".so";
+    libs = libNames.map(l => resolve(prefix, "lib", `lib${l}${ext}`));
+  }
+  return {
+    name: dep.name,
+    libs,
+    objects: [],
+    includes: [resolve(prefix, "include")],
+    defines,
+    sources: [],
+    outputs: [],
+    checks: [],
+  };
+}
+
+/**
  * Resolve a dependency: emit ninja rules for fetch → configure → build,
  * return absolute paths for linking.
  *
@@ -806,6 +886,10 @@ export function resolveDep(
 ): ResolvedDep | null {
   if (dep.enabled && !dep.enabled(cfg)) {
     return null;
+  }
+
+  if (isSystemDep(dep.name)) {
+    return resolveSystemDep(cfg, dep);
   }
 
   const source = depSource(cfg, dep);
@@ -1558,6 +1642,14 @@ function emitDirect(
   }
 
   const incFlags = (spec.includes ?? []).map(i => `-I${q(resolve(srcDir, i))}`);
+  // Vendored deps that include a system dep's headers (zlib.h for libarchive,
+  // libspng and lsquic) find them here, after their own.
+  const systemPrefix = systemDepsPrefix();
+  if (systemPrefix !== undefined) {
+    const dir = resolve(systemPrefix, "include");
+    // clang-cl only takes -idirafter as a driver flag passed through /clang:
+    incFlags.push(cfg.windows ? q(`/clang:-idirafter${dir}`) : `-idirafter${q(dir)}`);
+  }
   const defFlags = Object.entries(spec.defines ?? {}).map(([k, v]) => defineFlag(k, v));
   const libFlags = [...baseFlags, ...picFlags, ...incFlags, ...defFlags, ...(spec.cflags ?? [])];
 
